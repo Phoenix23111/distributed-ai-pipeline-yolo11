@@ -40,7 +40,7 @@ if uploaded_file is not None:
                         # Check What API says
                         status = status_data.get("status")
                         # wait 2 seconds before asking again
-                        time.sleep(45)
+                        time.sleep(2)
                     
                     st.success("YOLO11 Processing Complete!")
                     # Grab the output path from the sticky note and display it!
