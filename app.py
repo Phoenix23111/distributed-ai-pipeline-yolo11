@@ -35,7 +35,7 @@ if uploaded_file is not None:
                     status = "processing"
                     while status != "completed":
                         # Ask the API 
-                        status_response = requests.get(f"https://distributed-ai-pipeline-yolo11.onrender.com/v1/status/{data['task_id']}")
+                        status_response = requests.get(f"https://distributed-ai-pipeline-yolo11.onrender.com/api/v1/status/{data['task_id']}")
                         status_data = status_response.json()
                         # Check What API says
                         status = status_data.get("status")
