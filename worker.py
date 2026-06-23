@@ -1,58 +1,65 @@
+import os
+import requests
 from celery import Celery
-from ultralytics import YOLO
 import redis
-import time
-import json
+import cloudinary
+import cloudinary.uploader
+from ultralytics import YOLO
+from dotenv import load_dotenv
 
-# Connect to the Redis container (acting as both the message broker and backend)
-celery_app = Celery(
-    "ai_worker",
-    broker="redis://localhost:6379/0",
-    backend="redis://localhost:6379/0"
+# 1. Load the keys from the Colab .env file
+load_dotenv()
+
+# 2. Grab the full URL for Celery
+celery_redis_url = os.getenv("REDIS_URL")
+
+# 3. Chop off the SSL flag for the standard Redis client
+standard_redis_url = celery_redis_url.split("?")[0]
+
+# 4. Connect both clients using their preferred URLs!
+celery_app = Celery("ai_worker", broker=celery_redis_url, backend=celery_redis_url)
+redis_client = redis.Redis.from_url(standard_redis_url, decode_responses=True)
+
+# 5. Connect to the Cloud Storage (Cloudinary)
+cloudinary.config(
+  cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME"),
+  api_key = os.getenv("CLOUDINARY_API_KEY"),
+  api_secret = os.getenv("CLOUDINARY_API_SECRET"),
+  secure = True
 )
 
-# Connect a standard Redis client to update our task statuses
-redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-# Load the YOLO11-Nano model globally so it doesn't reload on every single image
-print("Loading YOLO11 model into memory...")
+# 6. Load the AI Muscle directly into the T4 GPU
+print("Loading YOLO11 onto the Nvidia T4 GPU...")
 model = YOLO("yolo11n.pt")
 
 @celery_app.task(name="process_ai_task")
-def run_heavy_model(task_id: str, input_path: str):
-    """
-    This is the actual background job. It pulls the task, processes it,
-    and updates the database without the main web server ever waiting.
-    """
-    print(f"[{task_id}] Worker executing YOLO11 inference...")
-    
-    # 0. Update status in Redis to show we are working on it
+def run_heavy_model(task_id, image_url):
+    print(f"[{task_id}] Colab Worker caught the task! Downloading image...")
     redis_client.hset(f"task:{task_id}", "status", "processing")
-    
-    # 1. Run inference on the image
-    results = model(input_path)
-    
-    # 2. Save the annotated image (with bounding boxes) to the results folder
-    output_path = f"results/{task_id}_output.jpg"
-    results[0].save(output_path)
 
-    # 3. Extract the actual text data (what objects were found)
-    detected_objects = []
-    for box in results[0].boxes:
-        class_id = int(box.cls)
-        class_name = model.names[class_id]
-        confidence = float(box.conf)
-        detected_objects.append(f"{class_name} ({confidence:.2f})")
-    
-    # 4. Save the final results back to Redis
-    final_payload = {
-        "output_image_path": output_path,
-        "detections": detected_objects
-    }
-# 4. Save the final results back to Redis (Atomically!)
+    # Step 1: Download the image from Cloudinary to the Google Server
+    local_input_path = f"{task_id}_input.jpg"
+    response = requests.get(image_url)
+    with open(local_input_path, "wb") as f:
+        f.write(response.content)
+
+    # Step 2: Run YOLO (This will be lightning fast on the GPU)
+    results = model(local_input_path)
+
+    # Step 3: Save locally on Colab
+    local_output_path = f"{task_id}_output.jpg"
+    results[0].save(local_output_path)
+
+    # Step 4: Upload the finished image back to Cloudinary
+    print(f"[{task_id}] Uploading finished result back to Cloud...")
+    upload_result = cloudinary.uploader.upload(local_output_path)
+    final_cloud_url = upload_result["secure_url"]
+
+    # Step 5: Update the Upstash sticky note with the final URL
     redis_client.hset(f"task:{task_id}", mapping={
-        "result": json.dumps(final_payload),
+        "output_path": final_cloud_url,
         "status": "completed"
     })
-    
-    print(f"[{task_id}] Processing complete! Image saved.")
-    return final_payload
+
+    print(f"[{task_id}] GPU Processing Complete!")
+    return final_cloud_url
