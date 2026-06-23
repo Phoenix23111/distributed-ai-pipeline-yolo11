@@ -1,2 +1,9 @@
 streamlit
 requests
+fastapi
+uvicorn
+python-multipart
+redis
+celery
+cloudinary
+python-dotenv
