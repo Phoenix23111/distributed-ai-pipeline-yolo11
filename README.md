@@ -60,3 +60,28 @@ To run this pipeline locally for development:
    ```bash
    git clone [https://github.com/your-username/distributed-ai-pipeline-yolo11.git](https://github.com/your-username/distributed-ai-pipeline-yolo11.git)
    cd distributed-ai-pipeline-yolo11
+
+2. **Create a virtual environment and install dependencies:**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   pip install -r requirements.txt
+   ```
+3. **Configure Environment Variables:**
+   Create a .env file in the root directory and add your cloud credentials:
+   ```bash
+   CLOUDINARY_CLOUD_NAME=your_value
+   CLOUDINARY_API_KEY=your_value
+   CLOUDINARY_API_SECRET=your_value
+   REDIS_URL=rediss://your_upstash_url:port?ssl_cert_reqs=CERT_NONE
+4. **Start the FastAPI Gateway:**
+   ```bash
+   uvicorn main:app --reload
+5. **Start the Streamlit Frontend (in a new terminal):**
+   ```bash
+   streamlit run app.py
+
+
+
+
+
